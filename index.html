@@ -215,6 +215,7 @@ button{font:inherit;color:inherit}
 
 <div id="modal" class="hidden"><div class="card">
   <img id="exImg" alt="Eksport notatki">
+  <div class="seg" id="segQ"><button data-q="3" class="on">Jakość: dobra</button><button data-q="4.5">Jakość: wysoka (większy plik)</button></div>
   <div class="seg" id="segOr"><button data-or="p" class="on">A4 pionowo</button><button data-or="l">A4 poziomo</button></div>
   <div class="small">PDF dzieli kartkę na strony A4 i tnie ją w pustych miejscach, gdy się da. Wpisany tekst i karteczki można w nim wyszukiwać. Pismo odręczne jest tylko obrazem.</div>
   <div class="acts"><button id="exPdf">Zapisz jako PDF</button><button id="exPng">Zapisz jako obraz</button><button id="exShare">Udostępnij PDF</button><button id="exClose">Zamknij</button></div>
@@ -1132,6 +1133,9 @@ function exportPNG(){
   const syncOr=()=>$$('#segOr button').forEach(q=>q.classList.toggle('on',q.dataset.or===pdfOrient));
   syncOr();
   $$('#segOr button').forEach(b=>b.onclick=()=>{pdfOrient=b.dataset.or;pdfCache=null;syncOr();});
+  const syncQ=()=>$$('#segQ button').forEach(q=>q.classList.toggle('on',q.dataset.q===pdfQ));
+  syncQ();
+  $$('#segQ button').forEach(b=>b.onclick=()=>{pdfQ=b.dataset.q;pdfCache=null;syncQ();});
   $('#exPdf').onclick=async()=>{
     try{
       const blob=await generatePdf();if(!blob)return;
@@ -1154,7 +1158,7 @@ function saveBlob(blob,name){
   a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),15000);
 }
-let pdfOrient='p',pdfCache=null,pdfInfo='';
+let pdfOrient='p',pdfQ='3',pdfCache=null,pdfInfo='';
 const PLCH='ĄĆĘŁŃÓŚŹŻąćęłńóśźż';
 function pdfStr(t){
   let o='';
@@ -1218,7 +1222,7 @@ function renderPdfPage(xa,xb,ya,yb,scPt,pw,ph,mL,mT,ppt,no,total){
   g.font=(9*ppt)+'px '+FONT;g.textAlign='center';g.textBaseline='middle';
   g.fillStyle=isDark()?'rgba(255,255,255,.55)':'rgba(0,0,0,.45)';
   g.fillText(no+' / '+total,cvp.width/2,cvp.height-16*ppt);
-  const d=cvp.toDataURL('image/jpeg',.9),bin=atob(d.split(',')[1]),u=new Uint8Array(bin.length);
+  const d=cvp.toDataURL('image/jpeg',.93),bin=atob(d.split(',')[1]),u=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
   return{jpg:u,iw:cvp.width,ih:cvp.height};
 }
@@ -1227,7 +1231,7 @@ async function generatePdf(){
   const vbs=S.items.map(vb);
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   for(const b of vbs){x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.w);y1=Math.max(y1,b.y+b.h);}
-  const land=pdfOrient==='l',pw=land?842:595,ph=land?595:842,mL=30,mT=30,mB=40,ppt=2;
+  const land=pdfOrient==='l',pw=land?842:595,ph=land?595:842,mL=30,mT=30,mB=40,ppt=+pdfQ;
   const Win=pw-2*mL,Hin=ph-mT-mB,cw=Math.max(x1-x0,1);
   const scPt=Math.max(Math.min(.75,Win/cw),.35),Ww=Win/scPt,Hw=Hin/scPt;
   const xc=splitAxis(vbs.map(b=>[b.x,b.x+b.w]),x0,x1,Ww),yc=splitAxis(vbs.map(b=>[b.y,b.y+b.h]),y0,y1,Hw);
