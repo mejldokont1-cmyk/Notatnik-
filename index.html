@@ -123,8 +123,8 @@ button{font:inherit;color:inherit}
 #modal{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:16px}
 .card{background:var(--surface);border-radius:20px;padding:14px;max-width:min(92vw,760px);max-height:92vh;display:flex;flex-direction:column;gap:10px}
 .card img{max-width:100%;max-height:60vh;object-fit:contain;border-radius:10px;background:#fff;-webkit-touch-callout:default;-webkit-user-select:auto;user-select:auto}
-.card .acts{display:flex;gap:8px}
-.card .acts button{flex:1;height:44px;border-radius:12px;border:1px solid var(--border);background:var(--surface2);font-weight:600;cursor:pointer}
+.card .acts{display:flex;gap:8px;flex-wrap:wrap}
+.card .acts button{flex:1;min-width:130px;height:44px;border-radius:12px;border:1px solid var(--border);background:var(--surface2);font-weight:600;cursor:pointer}
 #toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:14px;z-index:40;max-width:90vw;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
 #toast.show{opacity:1}
 @media (max-width:820px){ .title{display:none} #pL .btn{margin:0} .sz input{width:90px} }
@@ -153,7 +153,7 @@ button{font:inherit;color:inherit}
     <div class="pill" id="pR">
       <button class="btn" id="bUndo" aria-label="Cofnij" disabled><i data-i="undo"></i></button>
       <button class="btn" id="bRedo" aria-label="Ponów" disabled><i data-i="redo"></i></button>
-      <button class="btn" id="bExport" aria-label="Eksportuj obraz"><i data-i="export"></i></button>
+      <button class="btn" id="bExport" aria-label="Eksportuj jako PDF lub obraz"><i data-i="export"></i></button>
     </div>
   </div>
 
@@ -215,8 +215,9 @@ button{font:inherit;color:inherit}
 
 <div id="modal" class="hidden"><div class="card">
   <img id="exImg" alt="Eksport notatki">
-  <div class="small">Przytrzymaj obraz, aby go zapisać w galerii.</div>
-  <div class="acts"><button id="exShare">Udostępnij</button><button id="exClose">Zamknij</button></div>
+  <div class="seg" id="segOr"><button data-or="p" class="on">A4 pionowo</button><button data-or="l">A4 poziomo</button></div>
+  <div class="small">PDF dzieli kartkę na strony A4 i tnie ją w pustych miejscach, gdy się da. Wpisany tekst i karteczki można w nim wyszukiwać. Pismo odręczne jest tylko obrazem.</div>
+  <div class="acts"><button id="exPdf">Zapisz jako PDF</button><button id="exPng">Zapisz jako obraz</button><button id="exShare">Udostępnij PDF</button><button id="exClose">Zamknij</button></div>
 </div></div>
 <div id="palWrap" class="hidden"><div id="pal" class="card">
   <div class="dh"><b>Wybierz kolor</b><button class="btn sm" id="palX" aria-label="Zamknij"><i data-i="x"></i></button></div>
@@ -278,6 +279,9 @@ const FONTS=[
  {k:'caveat',n:'Caveat',f:'Caveat,cursive',g:'Caveat:wght@400;700'},
  {k:'patrick',n:'Patrick Hand',f:'"Patrick Hand",cursive',g:'Patrick+Hand'},
  {k:'amatic',n:'Amatic SC',f:'"Amatic SC",cursive',g:'Amatic+SC:wght@400;700'},
+ {k:'caveatb',n:'Caveat Brush',f:'"Caveat Brush",cursive',g:'Caveat+Brush'},
+ {k:'patricksc',n:'Patrick Hand SC',f:'"Patrick Hand SC",cursive',g:'Patrick+Hand+SC'},
+ {k:'amatica',n:'Amatica SC',f:'"Amatica SC",cursive',g:'Amatica+SC:wght@400;700'},
  {k:'comf',n:'Comfortaa',f:'Comfortaa,sans-serif',g:'Comfortaa:wght@400;700'},
  {k:'lora',n:'Lora',f:'Lora,Georgia,serif',g:'Lora:ital,wght@0,400;0,700;1,400;1,700'},
  {k:'merri',n:'Merriweather',f:'Merriweather,Georgia,serif',g:'Merriweather:ital,wght@0,400;0,700;1,400;1,700'},
@@ -286,13 +290,22 @@ const FONTS=[
  {k:'lato',n:'Lato',f:'Lato,system-ui,sans-serif',g:'Lato:ital,wght@0,400;0,700;1,400;1,700'}
 ];
 const FM={};FONTS.forEach(f=>FM[f.k]=f);
-const fontUsed=new Set(),fontReq=new Set();
+const fontUsed=new Set(),fontReq=new Set(),fontOK={};
+const PLTEST='ąćęłńóśźżĄĆĘŁŃÓŚŹŻ';
+function checkFont(f){
+  const fam=f.f.split(',')[0];
+  return document.fonts.load('400 24px '+fam,PLTEST).then(()=>{
+    mc.font='24px '+fam+',serif';const a=mc.measureText(PLTEST).width;
+    mc.font='24px '+fam+',sans-serif';const b=mc.measureText(PLTEST).width;
+    fontOK[f.k]=Math.abs(a-b)<.5;
+  }).catch(()=>{fontOK[f.k]=false;});
+}
 function ensureFont(k){
   fontUsed.add(k);
   const f=FM[k];if(!f||!f.g||fontReq.has(k))return;fontReq.add(k);
   if(!document.fonts||!document.fonts.load)return;
   const fam=f.f.split(',')[0];
-  Promise.all([document.fonts.load('400 20px '+fam,'Zażółć gęślą'),document.fonts.load('700 20px '+fam,'Zażółć'),document.fonts.load('italic 400 20px '+fam,'Zażółć')])
+  Promise.all([document.fonts.load('400 20px '+fam,PLTEST),document.fonts.load('700 20px '+fam,PLTEST),document.fonts.load('italic 400 20px '+fam,PLTEST)])
     .then(()=>{bb=new WeakMap();snapOk=false;requestDraw();}).catch(()=>{});
 }
 function fontStr(it){
@@ -303,7 +316,7 @@ function loadFontSheets(){
   FONTS.forEach(f=>{
     if(!f.g)return;
     const l=document.createElement('link');l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family='+f.g+'&display=swap';
-    l.onload=()=>{if(fontUsed.has(f.k)){fontReq.delete(f.k);ensureFont(f.k);}};
+    l.onload=()=>{if(fontUsed.has(f.k)){fontReq.delete(f.k);ensureFont(f.k);}checkFont(f).then(()=>{if(!$('#fonts').classList.contains('hidden'))renderOpts();});};
     document.head.appendChild(l);
   });
   if(document.fonts&&document.fonts.addEventListener)document.fonts.addEventListener('loadingdone',()=>{bb=new WeakMap();snapOk=false;requestDraw();});
@@ -979,7 +992,10 @@ function renderFonts(m){
   if(!m||!m.font){el.classList.add('hidden');el.innerHTML='';return;}
   const sl=el.scrollLeft;el.classList.remove('hidden');
   let h='<button class="fb'+(m.font.b?' on':'')+'" data-st="b" aria-label="Pogrubienie"><b>B</b></button><button class="fb'+(m.font.i?' on':'')+'" data-st="i" aria-label="Kursywa"><i>I</i></button>';
-  for(const f of FONTS)h+='<button class="fchip'+(f.k===m.font.k?' on':'')+'" data-f="'+f.k+'" style="font-family:'+f.f.replace(/"/g,"'")+'">Aa '+f.n+'</button>';
+  for(const f of FONTS){
+    if(fontOK[f.k]===false&&f.k!==m.font.k)continue;
+    h+='<button class="fchip'+(f.k===m.font.k?' on':'')+'" data-f="'+f.k+'" style="font-family:'+f.f.replace(/"/g,"'")+'">'+f.n+': Zażółć gęślą</button>';
+  }
   el.innerHTML=h;el.scrollLeft=sl;
   el.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>applyFont(b.dataset.f));
   el.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>applyStyle(b.dataset.st));
@@ -1111,15 +1127,157 @@ function exportPNG(){
   for(const it of S.items)drawItem(g,it);
   $('#exImg').src=c.toDataURL('image/png');
   $('#modal').classList.remove('hidden');
-  $('#exShare').onclick=()=>{
-    c.toBlob(b=>{
-      try{
-        const f=new File([b],'notatka.png',{type:'image/png'});
-        if(navigator.canShare&&navigator.canShare({files:[f]}))navigator.share({files:[f],title:S.title}).catch(()=>{});
-        else showToast('Udostępnianie niedostępne. Przytrzymaj obraz, aby go zapisać.');
-      }catch(e){showToast('Udostępnianie niedostępne. Przytrzymaj obraz, aby go zapisać.');}
-    },'image/png');
+  const fname='notatnik-'+((S.title||'notatka').replace(/[\\/:*?"<>|]+/g,'').trim().replace(/\s+/g,'-')||'notatka');
+  pdfCache=null;
+  const syncOr=()=>$$('#segOr button').forEach(q=>q.classList.toggle('on',q.dataset.or===pdfOrient));
+  syncOr();
+  $$('#segOr button').forEach(b=>b.onclick=()=>{pdfOrient=b.dataset.or;pdfCache=null;syncOr();});
+  $('#exPdf').onclick=async()=>{
+    try{
+      const blob=await generatePdf();if(!blob)return;
+      pdfCache=blob;saveBlob(blob,fname+'.pdf');
+      showToast('PDF zapisany ('+pdfInfo+'). Zwykle w folderze Pobrane.',5000);
+    }catch(e){showToast('Nie udało się utworzyć PDF.',4000);}
   };
+  $('#exPng').onclick=()=>{c.toBlob(b=>{saveBlob(b,fname+'.png');showToast('Obraz zapisany (zwykle w folderze Pobrane).',4000);},'image/png');};
+  $('#exShare').onclick=()=>{
+    if(!pdfCache){showToast('Najpierw kliknij „Zapisz jako PDF”, potem Udostępnij.',4500);return;}
+    try{
+      const f=new File([pdfCache],fname+'.pdf',{type:'application/pdf'});
+      if(navigator.canShare&&navigator.canShare({files:[f]}))navigator.share({files:[f],title:S.title}).catch(()=>{});
+      else showToast('Udostępnianie niedostępne. Użyj „Zapisz jako PDF”.',4000);
+    }catch(e){showToast('Udostępnianie niedostępne. Użyj „Zapisz jako PDF”.',4000);}
+  };
+}
+function saveBlob(blob,name){
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),15000);
+}
+let pdfOrient='p',pdfCache=null,pdfInfo='';
+const PLCH='ĄĆĘŁŃÓŚŹŻąćęłńóśźż';
+function pdfStr(t){
+  let o='';
+  for(const ch of t){
+    const i=PLCH.indexOf(ch);let code;
+    if(i>=0)code=128+i;else{const n=ch.charCodeAt(0);code=(n>=32&&n<=126)?n:32;}
+    if(code===40||code===41||code===92)o+='\\'+String.fromCharCode(code);
+    else if(code>=128)o+='\\'+code.toString(8).padStart(3,'0');
+    else o+=String.fromCharCode(code);
+  }
+  return o;
+}
+function splitAxis(ivs,lo,hi,size){
+  const cuts=[lo];let pos=lo;
+  while(pos+size<hi-1){
+    const end=pos+size,win=end-size*.2,cand=[end];
+    for(const iv of ivs)if(iv[1]>win&&iv[1]<end)cand.push(iv[1]+3);
+    cand.sort((a,b)=>b-a);
+    let best=end;
+    for(const c of cand){
+      if(c>end||c<=pos+size*.5)continue;
+      if(!ivs.some(iv=>iv[0]<c-.01&&iv[1]>c+.01)){best=c;break;}
+    }
+    cuts.push(best);pos=best;
+  }
+  cuts.push(hi);return cuts;
+}
+function textRuns(scPt,mL,mT,ph,xa,xb,ya,yb){
+  const runs=[],fam='Helvetica,Arial,sans-serif';
+  for(const it of S.items){
+    if(it.t!=='tx'&&it.t!=='nt')continue;
+    const v=String(it.v);if(!v.trim())continue;
+    const ct=cen(it),r=it.r||0,step=it.s*1.3;
+    let ls,lx,ly;
+    if(it.t==='tx'){ls=v.split('\n');lx=it.x;ly=it.y;}
+    else{const pd=it.s*.6;ls=wrapLines(v,fontStr(it),it.w-pd*2);lx=it.x+pd;ly=it.y+pd;}
+    ls.forEach((l,i)=>{
+      if(!l.trim())return;
+      const by=ly+(i+.5)*step+it.s*.3;
+      const q=r?rotPt(lx,by,ct.x,ct.y,r):{x:lx,y:by};
+      if(q.y<ya||q.y>=yb||q.x<xa||q.x>=xb)return;
+      mc.font=fontStr(it);const wv=mc.measureText(l).width;
+      mc.font=it.s+'px '+fam;const wn=mc.measureText(l).width||1;
+      runs.push({s:pdfStr(l),fs:it.s*scPt,tz:clamp(100*wv/wn,30,300),a:Math.cos(r),b:-Math.sin(r),c:Math.sin(r),d:Math.cos(r),
+        e:mL+(q.x-xa)*scPt,f:ph-(mT+(q.y-ya)*scPt)});
+    });
+  }
+  return runs;
+}
+function renderPdfPage(xa,xb,ya,yb,scPt,pw,ph,mL,mT,ppt,no,total){
+  const cvp=document.createElement('canvas');cvp.width=Math.round(pw*ppt);cvp.height=Math.round(ph*ppt);
+  const g=cvp.getContext('2d');g.fillStyle=paperColor();g.fillRect(0,0,cvp.width,cvp.height);
+  const k=ppt*scPt;
+  g.setTransform(k,0,0,k,mL*ppt-xa*k,mT*ppt-ya*k);
+  g.beginPath();g.rect(xa,ya,xb-xa,yb-ya);g.clip();
+  for(const it of S.items){
+    const b=vb(it);if(b.x>xb||b.y>yb||b.x+b.w<xa||b.y+b.h<ya)continue;
+    drawItem(g,it);
+  }
+  g.setTransform(1,0,0,1,0,0);
+  g.font=(9*ppt)+'px '+FONT;g.textAlign='center';g.textBaseline='middle';
+  g.fillStyle=isDark()?'rgba(255,255,255,.55)':'rgba(0,0,0,.45)';
+  g.fillText(no+' / '+total,cvp.width/2,cvp.height-16*ppt);
+  const d=cvp.toDataURL('image/jpeg',.9),bin=atob(d.split(',')[1]),u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+  return{jpg:u,iw:cvp.width,ih:cvp.height};
+}
+async function generatePdf(){
+  if(!S.items.length){showToast('Kartka jest pusta.');return null;}
+  const vbs=S.items.map(vb);
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const b of vbs){x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.w);y1=Math.max(y1,b.y+b.h);}
+  const land=pdfOrient==='l',pw=land?842:595,ph=land?595:842,mL=30,mT=30,mB=40,ppt=2;
+  const Win=pw-2*mL,Hin=ph-mT-mB,cw=Math.max(x1-x0,1);
+  const scPt=Math.max(Math.min(.75,Win/cw),.35),Ww=Win/scPt,Hw=Hin/scPt;
+  const xc=splitAxis(vbs.map(b=>[b.x,b.x+b.w]),x0,x1,Ww),yc=splitAxis(vbs.map(b=>[b.y,b.y+b.h]),y0,y1,Hw);
+  const regs=[];
+  for(let i=0;i<xc.length-1;i++)for(let j=0;j<yc.length-1;j++){
+    const xa=xc[i],xb=xc[i+1],ya=yc[j],yb=yc[j+1];
+    if(vbs.some(b=>b.x<xb&&b.x+b.w>xa&&b.y<yb&&b.y+b.h>ya))regs.push([xa,xb,ya,yb]);
+  }
+  if(regs.length>120){showToast('Za dużo stron ('+regs.length+'). Podziel notatkę na mniejsze.',5000);return null;}
+  const pages=[];
+  for(let i=0;i<regs.length;i++){
+    showToast('Przygotowuję PDF… strona '+(i+1)+' z '+regs.length,60000);
+    await new Promise(r=>setTimeout(r,10));
+    const [xa,xb,ya,yb]=regs[i];
+    const im=renderPdfPage(xa,xb,ya,yb,scPt,pw,ph,mL,mT,ppt,i+1,regs.length);
+    im.runs=textRuns(scPt,mL,mT,ph,xa,xb,ya,yb);pages.push(im);
+  }
+  pdfInfo='stron: '+pages.length;
+  return makePDF(pages,pw,ph);
+}
+function makePDF(pages,pw,ph){
+  const enc=new TextEncoder(),parts=[],offs=[];let len=0;
+  const push=x=>{const b=typeof x==='string'?enc.encode(x):x;parts.push(b);len+=b.length;};
+  const obj=(n,body)=>{offs[n]=len;push(n+' 0 obj\n'+body+'\nendobj\n');};
+  const n=pages.length;
+  push('%PDF-1.4\n');
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2,'<< /Type /Pages /Kids ['+pages.map((_,i)=>(6+3*i)+' 0 R').join(' ')+'] /Count '+n+' >>');
+  obj(3,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding 4 0 R /ToUnicode 5 0 R >>');
+  const names='Aogonek Cacute Eogonek Lslash Nacute Oacute Sacute Zacute Zdotaccent aogonek cacute eogonek lslash nacute oacute sacute zacute zdotaccent'.split(' ');
+  obj(4,'<< /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences [128 '+names.map(x=>'/'+x).join(' ')+'] >>');
+  let cm='/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<00> <FF>\nendcodespacerange\n1 beginbfrange\n<20> <7E> <0020>\nendbfrange\n18 beginbfchar\n';
+  for(let i=0;i<PLCH.length;i++)cm+='<'+(128+i).toString(16).toUpperCase()+'> <'+PLCH.charCodeAt(i).toString(16).toUpperCase().padStart(4,'0')+'>\n';
+  cm+='endbfchar\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend';
+  obj(5,'<< /Length '+cm.length+' >>\nstream\n'+cm+'\nendstream');
+  pages.forEach((p,i)=>{
+    const po=6+3*i,co=7+3*i,io=8+3*i;
+    obj(po,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+pw+' '+ph+'] /Resources << /XObject << /Im0 '+io+' 0 R >> /Font << /F1 3 0 R >> >> /Contents '+co+' 0 R >>');
+    let cs='q '+pw+' 0 0 '+ph+' 0 0 cm /Im0 Do Q\nBT\n3 Tr\n';
+    for(const r of p.runs)cs+='/F1 '+r.fs.toFixed(2)+' Tf '+r.tz.toFixed(1)+' Tz '+[r.a,r.b,r.c,r.d].map(v=>v.toFixed(5)).join(' ')+' '+r.e.toFixed(2)+' '+r.f.toFixed(2)+' Tm ('+r.s+') Tj\n';
+    cs+='ET';
+    obj(co,'<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream');
+    offs[io]=len;
+    push(io+' 0 obj\n<< /Type /XObject /Subtype /Image /Width '+p.iw+' /Height '+p.ih+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+p.jpg.length+' >>\nstream\n');
+    push(p.jpg);push('\nendstream\nendobj\n');
+  });
+  const total=6+3*n,xr=len;let x='xref\n0 '+total+'\n0000000000 65535 f \n';
+  for(let i=1;i<total;i++)x+=String(offs[i]).padStart(10,'0')+' 00000 n \n';
+  push(x+'trailer\n<< /Size '+total+' /Root 1 0 R >>\nstartxref\n'+xr+'\n%%EOF');
+  return new Blob(parts,{type:'application/pdf'});
 }
 $('#exClose').onclick=()=>$('#modal').classList.add('hidden');
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')$('#modal').classList.add('hidden');});
