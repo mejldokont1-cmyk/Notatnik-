@@ -205,6 +205,9 @@ button{font:inherit;color:inherit}
   <div><h3>Kolor kartki</h3>
     <div class="sws wrap" id="paperSw"></div></div>
   <button class="opt" id="tgFinger" aria-pressed="false"><span>Palec też rysuje<br><span class="small">Przesuwanie kartki dwoma palcami</span></span><span class="tg"></span></button>
+  <button class="opt" id="dBackup"><span>Zapisz kopię zapasową<br><span class="small" id="bkInfo">Jeszcze nie zapisano kopii</span></span></button>
+  <button class="opt" id="dRestore"><span>Wczytaj kopię zapasową</span></button>
+  <input type="file" id="fileBk" accept=".json,application/json" hidden>
   <button class="opt" id="dFull"><span>Pełny ekran</span></button>
   <button class="opt" id="dClear"><span>Wyczyść tę kartkę</span></button>
   <div class="small">Notatki zapisują się automatycznie w pamięci przeglądarki na tym urządzeniu. Wyczyszczenie danych przeglądarki je usunie, więc ważne rzeczy eksportuj jako obraz.</div>
@@ -957,13 +960,17 @@ function renderOpts(){
   }
   if(m.shapes){h+='<div class="sws">';SHAPES.forEach(x=>{h+='<button class="chip'+(x.k===shapeKind?' on':'')+'" data-sh="'+x.k+'">'+x.n+'</button>';});h+='</div>';}
   if(m.size)h+='<label class="sz"><span>Rozmiar</span><input type="range" min="'+m.size.min+'" max="'+m.size.max+'" step="1" value="'+Math.round(m.size.val)+'"><b>'+Math.round(m.size.val)+'</b></label>';
-  if(editing)h+='<button class="done">Gotowe</button>';
+  if(editing)h+='<button class="btn sm" id="eRotL" aria-label="Obróć w lewo"><svg viewBox="0 0 24 24">'+IC.rotl+'</svg></button><button class="btn sm" id="eRotR" aria-label="Obróć w prawo"><svg viewBox="0 0 24 24">'+IC.rotr+'</svg></button><button class="done">Gotowe</button>';
   el.innerHTML=h;
   el.querySelectorAll('.sw[data-c]').forEach(b=>b.onclick=()=>applyColor(b.dataset.c,false,m));
   const mo=el.querySelector('.sw.more');if(mo)mo.onclick=()=>openPalette(m.cur,c=>applyColor(c,false,m),m.pal===INK);
   const rg=el.querySelector('input[type=range]');
   if(rg){rg.oninput=()=>{rg.nextElementSibling.textContent=rg.value;applySize(+rg.value);};rg.onchange=()=>{if(m.it)commit();};}
-  const dn=el.querySelector('.done');if(dn)dn.onclick=()=>closeEditor();
+  const dn=el.querySelector('.done');
+  if(dn)dn.onclick=()=>{const it=editing;closeEditor();if(it&&S.items.includes(it)){selIt=it;setTool('select');}};
+  const eL=el.querySelector('#eRotL'),eR=el.querySelector('#eRotR');
+  const erot=d=>{if(!editing)return;editing.r=(editing.r||0)+d;commit();placeEditor();requestDraw();};
+  if(eL)eL.onclick=()=>erot(-Math.PI/12);if(eR)eR.onclick=()=>erot(Math.PI/12);
   el.querySelectorAll('[data-sh]').forEach(b=>b.onclick=()=>{shapeKind=b.dataset.sh;renderOpts();});
   renderFonts(m);
 }
@@ -1153,9 +1160,44 @@ async function renameNote(id,title){
   if(id===S.id){S.title=title;updTitle();await saveNow();return;}
   const r=await DB.get(id);if(r){r.title=title;await DB.put(r);}
 }
-async function openDrawer(){closeEditor();await saveNow();await renderDrawer();applyPaperUI();$('#scrim').classList.remove('hidden');$('#drawer').classList.add('open');}
+async function openDrawer(){closeEditor();await saveNow();await renderDrawer();applyPaperUI();updBkInfo();$('#scrim').classList.remove('hidden');$('#drawer').classList.add('open');}
 function closeDrawer(){$('#scrim').classList.add('hidden');$('#drawer').classList.remove('open');}
 $('#bMenu').onclick=openDrawer;$('#tTitle').onclick=openDrawer;$('#dClose').onclick=closeDrawer;$('#scrim').onclick=closeDrawer;
+const BK_KEY='notatnik_last_backup';
+function updBkInfo(){
+  let t=null;try{t=localStorage.getItem(BK_KEY);}catch(e){}
+  $('#bkInfo').textContent=t?'Ostatnia kopia: '+new Date(+t).toLocaleString('pl-PL'):'Jeszcze nie zapisano kopii';
+}
+async function backupAll(){
+  await saveNow();
+  const ms=await DB.metas(),notes=[];
+  for(const m of ms){const r=await DB.get(m.id);if(r)notes.push(r);}
+  if(!notes.length){showToast('Brak notatek do zapisania.');return;}
+  const blob=new Blob([JSON.stringify({app:'notatnik',version:1,exported:Date.now(),notes})],{type:'application/json'});
+  const d=new Date(),name='notatnik-kopia-'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'.json';
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),15000);
+  try{localStorage.setItem(BK_KEY,String(Date.now()));}catch(e){}
+  updBkInfo();showToast('Kopia zapisana jako '+name+' (zwykle w folderze Pobrane).',5000);
+}
+$('#dBackup').onclick=backupAll;
+$('#dRestore').onclick=()=>$('#fileBk').click();
+$('#fileBk').addEventListener('change',async()=>{
+  const f=$('#fileBk').files[0];$('#fileBk').value='';if(!f)return;
+  try{
+    const data=JSON.parse(await f.text());
+    if(!data||data.app!=='notatnik'||!Array.isArray(data.notes))throw new Error('format');
+    const have=new Set((await DB.metas()).map(m=>m.id));let n=0;
+    for(const r of data.notes){
+      if(!r||!Array.isArray(r.items))continue;
+      const rec={id:r.id||('n'+Date.now().toString(36)+n),title:r.title||'Notatka',updated:Date.now(),items:r.items,imgs:r.imgs||{},view:r.view||{x:0,y:0,z:1},bg:r.bg||'grid',paper:r.paper||'white'};
+      if(have.has(rec.id)){rec.id='n'+Date.now().toString(36)+n;rec.title+=' (z kopii)';}
+      have.add(rec.id);await DB.put(rec);n++;
+    }
+    await renderDrawer();showToast(n?('Wczytano notatek: '+n):'Plik nie zawiera notatek.',4000);
+  }catch(e){showToast('Nie udało się wczytać pliku. To nie wygląda na kopię z Notatnika.',4500);}
+});
 $('#dNew').onclick=async()=>{await newNote();closeDrawer();};
 $$('#segBg button').forEach(b=>b.onclick=()=>{S.bg=b.dataset.bg;applyPaperUI();snapOk=false;requestDraw();scheduleSave();});
 
@@ -1196,6 +1238,7 @@ addEventListener('pagehide',saveNow);
 /* ---------- init ---------- */
 (async function init(){
   icons();loadFontSheets();resize();
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
   const ok=await DB.open();
   if(!ok)showToast('Brak trwałego zapisu w tej przeglądarce. Notatki znikną po zamknięciu strony.');
   const ms=(await DB.metas()).sort((a,b)=>b.updated-a.updated);
